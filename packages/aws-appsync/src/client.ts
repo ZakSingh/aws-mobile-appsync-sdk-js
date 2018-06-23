@@ -16,15 +16,15 @@ import { Store } from 'redux';
 
 import { OfflineCache, METADATA_KEY, defaultDataIdFromObject } from './cache/index';
 import {
-    OfflineLink,
-    saveSnapshot,
-    replaceUsingMap,
-    saveServerId,
-    AuthLink,
-    NonTerminatingHttpLink,
-    SubscriptionHandshakeLink,
-    ComplexObjectLink,
-    AUTH_TYPE
+  OfflineLink,
+  saveSnapshot,
+  replaceUsingMap,
+  saveServerId,
+  AuthLink,
+  NonTerminatingHttpLink,
+  SubscriptionHandshakeLink,
+  ComplexObjectLink,
+  AUTH_TYPE
 } from './link';
 import { createStore } from './store';
 import { ApolloCache } from 'apollo-cache';
@@ -33,244 +33,251 @@ import { ConflictResolutionInfo } from './link/offline-link';
 import { Credentials, CredentialsOptions } from 'aws-sdk/lib/credentials';
 
 export { defaultDataIdFromObject };
+type OperationTypeNode = 'query' | 'mutation' | 'subscription';
+export const createSubscriptionHandshakeLink = (url: string, resultsFetcherLink = new HttpLink({ uri: url })) => {
+  return ApolloLink.split(
+    operation => {
+      const { query } = operation;
+      const { kind, operation: graphqlOperation }: { kind: 'OperationDefinition' | 'FragmentDefinition', operation?: OperationTypeNode | null } = getMainDefinition(query);
+      const isSubscription = kind === 'OperationDefinition' && graphqlOperation === 'subscription';
 
-export const createSubscriptionHandshakeLink = (url, resultsFetcherLink = new HttpLink({ uri: url })) => {
-    return ApolloLink.split(
-        operation => {
-            const { query } = operation;
-            const { kind, operation: graphqlOperation } = getMainDefinition(query);
-            const isSubscription = kind === 'OperationDefinition' && graphqlOperation === 'subscription';
-
-            return isSubscription;
-        },
-        ApolloLink.from([
-            new NonTerminatingHttpLink('subsInfo', { uri: url }),
-            new SubscriptionHandshakeLink('subsInfo'),
-        ]),
-        resultsFetcherLink,
-    );
+      return isSubscription;
+    },
+    ApolloLink.from([
+      new NonTerminatingHttpLink('subsInfo', { uri: url }),
+      new SubscriptionHandshakeLink('subsInfo'),
+    ]),
+    resultsFetcherLink,
+  );
 };
 
-export const createAuthLink = ({ url, region, auth }) => new AuthLink({ url, region, auth });
+export const createAuthLink = ({ url, region, auth }: { url: string, region: string, auth: AuthOptions }) => new AuthLink({ url, region, auth });
 
-const passthrough = (op, forward) => (forward ? forward(op) : Observable.of());
+const passthrough = (op: any, forward: Function) => (forward ? forward(op) : Observable.of());
 
 export const createAppSyncLink = ({
-    url,
-    region,
-    auth,
-    complexObjectsCredentials,
-    resultsFetcherLink = new HttpLink({ uri: url }),
-}) => {
-    const link = ApolloLink.from([
-        createLinkWithStore((store) => new OfflineLink(store)),
-        new ComplexObjectLink(complexObjectsCredentials),
-        createAuthLink({ url, region, auth }),
-        createSubscriptionHandshakeLink(url, resultsFetcherLink)
-    ].filter(Boolean));
-
-    return link;
-};
-
-export const createLinkWithCache = (createLinkFunc = (cache: ApolloCache<any>) => new ApolloLink(passthrough)) => {
-    let theLink;
-
-    return new ApolloLink((op, forward) => {
-        if (!theLink) {
-            const { cache } = op.getContext();
-
-            theLink = createLinkFunc(cache);
-        }
-
-        return theLink.request(op, forward);
-    });
-}
-
-export interface CacheWithStore<T> extends ApolloCache<T> {
-    store: Store<any>
-}
-
-const createLinkWithStore = (createLinkFunc = (store: Store<any>) => new ApolloLink(passthrough)) => {
-    return createLinkWithCache((cache) => {
-        const { store } = cache as CacheWithStore<any>;
-
-        return store ? createLinkFunc(store) : new ApolloLink(passthrough)
-    });
-}
-
-export interface AWSAppSyncClientOptions {
+  url,
+  region,
+  auth,
+  complexObjectsCredentials,
+  resultsFetcherLink = new HttpLink({ uri: url }),
+}: {
     url: string,
     region: string,
     auth: AuthOptions,
-    conflictResolver?: (info: ConflictResolutionInfo) => string | object,
-    complexObjectsCredentials?: () => (Credentials | CredentialsOptions | null) | Credentials | CredentialsOptions | null,
-    cacheOptions?: ApolloReducerConfig,
-    disableOffline?: boolean,
+    complexObjectsCredentials: () => (Credentials | CredentialsOptions | null) | Credentials | CredentialsOptions | null,
+    resultsFetcherLink?: HttpLink
+  }) => {
+  const link = ApolloLink.from([
+    createLinkWithStore((store) => new OfflineLink(store)),
+    new ComplexObjectLink(complexObjectsCredentials),
+    createAuthLink({ url, region, auth }),
+    createSubscriptionHandshakeLink(url, resultsFetcherLink)
+  ].filter(Boolean));
+
+  return link;
+};
+
+export const createLinkWithCache = (createLinkFunc = (cache: ApolloCache<any>) => new ApolloLink(passthrough)) => {
+  let theLink: ApolloLink;
+
+  return new ApolloLink((op, forward) => {
+    if (!theLink) {
+      const { cache } = op.getContext();
+
+      theLink = createLinkFunc(cache);
+    }
+
+    return theLink.request(op, forward);
+  });
+}
+
+export interface CacheWithStore<T> extends ApolloCache<T> {
+  store: Store<any>
+}
+
+const createLinkWithStore = (createLinkFunc = (store: Store<any>) => new ApolloLink(passthrough)) => {
+  return createLinkWithCache((cache) => {
+    const { store } = cache as CacheWithStore<any>;
+
+    return store ? createLinkFunc(store) : new ApolloLink(passthrough)
+  });
+}
+
+export interface AWSAppSyncClientOptions {
+  url: string,
+  region: string,
+  auth: AuthOptions,
+  conflictResolver?: (info: ConflictResolutionInfo) => string | object,
+  complexObjectsCredentials?: () => (Credentials | CredentialsOptions | null) | Credentials | CredentialsOptions | null,
+  cacheOptions?: ApolloReducerConfig,
+  disableOffline?: boolean,
 }
 
 class AWSAppSyncClient<TCacheShape> extends ApolloClient<TCacheShape> {
 
-    private hydratedPromise: Promise<AWSAppSyncClient<TCacheShape>>;
+  private hydratedPromise: Promise<AWSAppSyncClient<TCacheShape>>;
 
-    hydrated() {
-        return this.hydratedPromise
+  hydrated() {
+    return this.hydratedPromise
+  };
+
+  private _disableOffline: boolean;
+  private _store: Store<any>;
+  private _origBroadcastQueries: () => void;
+
+  initQueryManager() {
+    if (!this.queryManager) {
+      super.initQueryManager();
+
+      this._origBroadcastQueries = this.queryManager.broadcastQueries;
+    }
+  }
+
+  /**
+   *
+   * @param {object} appSyncOptions
+   * @param {ApolloClientOptions<InMemoryCache>} options
+   */
+  constructor({
+    url,
+    region,
+    auth,
+    conflictResolver,
+    complexObjectsCredentials,
+    cacheOptions = {},
+    disableOffline = false
+  }: AWSAppSyncClientOptions, options?: ApolloClientOptions<InMemoryCache>) {
+    const { cache: customCache = undefined, link: customLink = undefined } = options || {};
+
+    if (!customLink && (!url || !region || !auth)) {
+      throw new Error(
+        'In order to initialize AWSAppSyncClient, you must specify url, region and auth properties on the config object or a custom link.'
+      );
+    }
+
+    let resolveClient: Function;
+
+    const dataIdFromObject = disableOffline ? () => { } : cacheOptions.dataIdFromObject || defaultDataIdFromObject;
+    const store = disableOffline ? null : createStore(() => this, () => resolveClient(this), conflictResolver, dataIdFromObject);
+    const cache: ApolloCache<any> = disableOffline ? (customCache || new InMemoryCache(cacheOptions)) : new OfflineCache(store, cacheOptions);
+
+    const waitForRehydrationLink = new ApolloLink((op, forward) => {
+      let handle: { unsubscribe: Function } = null;
+
+      return new Observable(observer => {
+        this.hydratedPromise.then(() => {
+          handle = passthrough(op, forward).subscribe(observer);
+        }).catch(observer.error);
+
+        return () => {
+          if (handle) {
+            handle.unsubscribe();
+          }
+        };
+      });
+    });
+    const link = waitForRehydrationLink.concat(customLink || createAppSyncLink({ url, region, auth, complexObjectsCredentials }));
+
+    const newOptions = {
+      ...options,
+      link,
+      cache,
     };
 
-    private _disableOffline: boolean;
-    private _store: Store<any>;
-    private _origBroadcastQueries: () => void;
+    super(newOptions);
 
-    initQueryManager() {
-        if (!this.queryManager) {
-            super.initQueryManager();
+    this.hydratedPromise = disableOffline ? Promise.resolve(this) : new Promise(resolve => resolveClient = resolve);
+    this._disableOffline = disableOffline;
+    this._store = store;
+  }
 
-            this._origBroadcastQueries = this.queryManager.broadcastQueries;
-        }
+  /**
+   *
+   * @param {MutationOptions} options
+   * @returns {Promise<FetchResult>}
+   */
+  async mutate(options: MutationOptions) {
+    const { update, refetchQueries, context: origContext = {}, ...otherOptions } = options;
+    const { AASContext: { doIt = false, ...restAASContext } = {} } = origContext;
+
+    const context = {
+      ...origContext,
+      AASContext: {
+        doIt,
+        ...restAASContext,
+        ...(!doIt ? { refetchQueries, update } : {}),
+        ...(doIt ? { client: this } : {}),
+      }
+    };
+
+    const { optimisticResponse, variables } = otherOptions;
+    const data = optimisticResponse &&
+      (typeof optimisticResponse === 'function' ? { ...optimisticResponse(variables) } : optimisticResponse);
+
+    const newOptions = {
+      ...otherOptions,
+      optimisticResponse: doIt ? null : data,
+      update,
+      ...(doIt ? { refetchQueries } : {}),
+      context,
     }
 
-    /**
-     *
-     * @param {object} appSyncOptions
-     * @param {ApolloClientOptions<InMemoryCache>} options
-     */
-    constructor({
-        url,
-        region,
-        auth,
-        conflictResolver,
-        complexObjectsCredentials,
-        cacheOptions = {},
-        disableOffline = false
-    }: AWSAppSyncClientOptions, options?: ApolloClientOptions<InMemoryCache>) {
-        const { cache: customCache = undefined, link: customLink = undefined } = options || {};
+    if (!this._disableOffline) {
+      if (!doIt) {
+        const { [METADATA_KEY]: { snapshot: { enqueuedMutations } } } = this._store.getState();
 
-        if (!customLink && (!url || !region || !auth)) {
-            throw new Error(
-                'In order to initialize AWSAppSyncClient, you must specify url, region and auth properties on the config object or a custom link.'
-            );
+        if (enqueuedMutations === 0) {
+          boundSaveSnapshot(this._store, this.cache);
         }
+      }
+    }
 
-        let resolveClient;
 
-        const dataIdFromObject = disableOffline ? () => { } : cacheOptions.dataIdFromObject || defaultDataIdFromObject;
-        const store = disableOffline ? null : createStore(() => this, () => resolveClient(this), conflictResolver, dataIdFromObject);
-        const cache: ApolloCache<any> = disableOffline ? (customCache || new InMemoryCache(cacheOptions)) : new OfflineCache(store, cacheOptions);
+    let result: FetchResult = null;
+    try {
+      result = await super.mutate(newOptions);
 
-        const waitForRehydrationLink = new ApolloLink((op, forward) => {
-            let handle = null;
+      return result;
+    } finally {
+      if (!this._disableOffline) {
+        if (doIt && result && result.data) {
+          const {
+            offline: { outbox: [, ...enquededMutations] },
+          } = this._store.getState();
+          const { data } = result;
 
-            return new Observable(observer => {
-                this.hydratedPromise.then(() => {
-                    handle = passthrough(op, forward).subscribe(observer);
-                }).catch(observer.error);
+          // persist canonical snapshot
+          boundSaveSnapshot(this._store, this.cache);
 
-                return () => {
-                    if (handle) {
-                        handle.unsubscribe();
-                    }
-                };
+          // Save map of client ids with server ids
+          boundSaveServerId(this._store, optimisticResponse, data);
+
+          const { [METADATA_KEY]: { idsMap } } = this._store.getState();
+
+          enquededMutations.forEach(({ meta: { offline: { effect: { update, optimisticResponse: origOptimisticResponse } } } }) => {
+            if (typeof update !== 'function') {
+              return;
+            }
+
+            const optimisticResponse = replaceUsingMap({ ...origOptimisticResponse }, idsMap);
+
+            tryFunctionOrLogError(() => {
+              update(this.cache, { data: optimisticResponse });
             });
-        });
-        const link = waitForRehydrationLink.concat(customLink || createAppSyncLink({ url, region, auth, complexObjectsCredentials }));
+          });
 
-        const newOptions = {
-            ...options,
-            link,
-            cache,
-        };
-
-        super(newOptions);
-
-        this.hydratedPromise = disableOffline ? Promise.resolve(this) : new Promise(resolve => resolveClient = resolve);
-        this._disableOffline = disableOffline;
-        this._store = store;
+          this.queryManager.broadcastQueries = this._origBroadcastQueries;
+          this.queryManager.broadcastQueries();
+        }
+      }
     }
-
-    /**
-     *
-     * @param {MutationOptions} options
-     * @returns {Promise<FetchResult>}
-     */
-    async mutate(options) {
-        const { update, refetchQueries, context: origContext = {}, ...otherOptions } = options;
-        const { AASContext: { doIt = false, ...restAASContext } = {} } = origContext;
-
-        const context = {
-            ...origContext,
-            AASContext: {
-                doIt,
-                ...restAASContext,
-                ...(!doIt ? { refetchQueries, update } : {}),
-                ...(doIt ? { client: this } : {}),
-            }
-        };
-
-        const { optimisticResponse, variables } = otherOptions;
-        const data = optimisticResponse &&
-            (typeof optimisticResponse === 'function' ? { ...optimisticResponse(variables) } : optimisticResponse);
-
-        const newOptions = {
-            ...otherOptions,
-            optimisticResponse: doIt ? null : data,
-            update,
-            ...(doIt ? { refetchQueries } : {}),
-            context,
-        }
-
-        if (!this._disableOffline) {
-            if (!doIt) {
-                const { [METADATA_KEY]: { snapshot: { enqueuedMutations } } } = this._store.getState();
-
-                if (enqueuedMutations === 0) {
-                    boundSaveSnapshot(this._store, this.cache);
-                }
-            }
-        }
-
-        let result = null;
-        try {
-            result = await super.mutate(newOptions);
-
-            return result;
-        } finally {
-            if (!this._disableOffline) {
-                if (doIt && result && result.data) {
-                    const {
-                        offline: { outbox: [, ...enquededMutations] },
-                    } = this._store.getState();
-                    const { data } = result;
-
-                    // persist canonical snapshot
-                    boundSaveSnapshot(this._store, this.cache);
-
-                    // Save map of client ids with server ids
-                    boundSaveServerId(this._store, optimisticResponse, data);
-
-                    const { [METADATA_KEY]: { idsMap } } = this._store.getState();
-
-                    enquededMutations.forEach(({ meta: { offline: { effect: { update, optimisticResponse: origOptimisticResponse } } } }) => {
-                        if (typeof update !== 'function') {
-                            return;
-                        }
-
-                        const optimisticResponse = replaceUsingMap({ ...origOptimisticResponse }, idsMap);
-
-                        tryFunctionOrLogError(() => {
-                            update(this.cache, { data: optimisticResponse });
-                        });
-                    });
-
-                    this.queryManager.broadcastQueries = this._origBroadcastQueries;
-                    this.queryManager.broadcastQueries();
-                }
-            }
-        }
-    }
+  }
 
 }
 
-const boundSaveSnapshot = (store, cache) => store.dispatch(saveSnapshot(cache));
-const boundSaveServerId = (store, optimisticResponse, data) => store.dispatch(saveServerId(optimisticResponse, data));
+const boundSaveSnapshot = (store: Store<any>, cache: ApolloCache<any>) => store.dispatch(saveSnapshot(cache));
+const boundSaveServerId = (store: Store<any>, optimisticResponse: Function | Object, data: Object) => store.dispatch(saveServerId(optimisticResponse, data));
 
 export default AWSAppSyncClient;
 export { AWSAppSyncClient };
