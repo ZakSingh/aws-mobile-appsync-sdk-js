@@ -15,7 +15,6 @@ import * as Url from 'url';
 
 import { userAgent } from "../platform";
 import { Credentials, CredentialsOptions } from 'aws-sdk/lib/credentials';
-import { SubscriptionType } from 'aws-sdk/clients/budgets';
 
 const packageInfo = require("../../package.json");
 
@@ -31,11 +30,6 @@ export enum AUTH_TYPE {
     OPENID_CONNECT = 'OPENID_CONNECT',
 }
 
-interface AuthLinkOptions {
-    url: string;
-    region: string;
-    auth?: AuthOptions
-}
 export class AuthLink extends ApolloLink {
 
     private link: ApolloLink;
@@ -44,13 +38,13 @@ export class AuthLink extends ApolloLink {
      * 
      * @param {*} options
      */
-    constructor(options: AuthLinkOptions) {
+    constructor(options) {
         super();
 
         this.link = authLink(options);
     }
 
-    request(operation: any, forward: NextLink) {
+    request(operation, forward) {
         return this.link.request(operation, forward);
     }
 }
@@ -60,7 +54,7 @@ interface Headers {
     value: string | (() => (string | Promise<string>))
 }
 
-const headerBasedAuth = async ({ header, value }: Headers = { header: '', value: '' }, operation: any, forward: NextLink) => {
+const headerBasedAuth = async ({ header, value }: Headers = { header: '', value: '' }, operation, forward) => {
     const origContext = operation.getContext();
     let headers = {
         ...origContext.headers,
@@ -85,7 +79,7 @@ const headerBasedAuth = async ({ header, value }: Headers = { header: '', value:
 
 };
 
-const iamBasedAuth = async ({ credentials, region, url }: { credentials: Object | Function, region: string, url: string }, operation: any, forward: NextLink) => {
+const iamBasedAuth = async ({ credentials, region, url }, operation, forward) => {
     const service = SERVICE;
     const origContext = operation.getContext();
 
